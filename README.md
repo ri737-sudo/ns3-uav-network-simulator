@@ -1,19 +1,22 @@
 # UAV Network Simulator (ns-3)
 
-This project simulates communication between multiple UAVs using ns-3.
+This project simulates UAV-to-UAV communication using ns-3.
 
 ## Features
-- User-defined number of UAVs
-- WiFi communication
-- TCP / UDP traffic
-- UAV-to-UAV messaging in terminal
-- Adjustable distance and simulation time
+- Dynamic topology selection based on drone count
+- UDP (normal mode) / TCP (emergency mode)
+- WiFi ad-hoc UAV network
+- Real-time console logs:
+  - UAV X → UAV Y : MESSAGE SENT
+  - UAV Y RECEIVED MESSAGE
 
-## Run the simulation
+## How to Run
+
+Inside ns-3 directory:
 
 ```bash
-cd ~/ns-3-dev
-./ns3 run "scratch/uav-network-sim --nUavs=5 --distance=100 --interval=2 --simTime=20"
-
-Save:
-
+./ns3 run "scratch/uav-network-sim \
+--nUav=5 \
+--altitude=120 \
+--emergency=no \
+--terrain=less"
