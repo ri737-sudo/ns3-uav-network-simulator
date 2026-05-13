@@ -70,10 +70,10 @@ void SendUavMessage(uint32_t sender, uint32_t receiver)
 // ================= MAIN =================
 int main(int argc, char *argv[])
 {
-    uint32_t nUav = 5;
-    double altitude = 100.0;
-    std::string emergency = "no";
-    std::string terrain = "less";
+    uint32_t nUav=7;
+    double altitude=100;
+    std::string emergency="yes";
+    std::string terrain="more";
 
     CommandLine cmd;
     cmd.AddValue("nUav", "Number of drones", nUav);
