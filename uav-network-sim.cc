@@ -5,18 +5,18 @@
 #include "ns3/wifi-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/propagation-module.h"
+#include "ns3/socket.h"
 
 using namespace ns3;
+
 NS_LOG_COMPONENT_DEFINE("UavNetworkSim");
 
-
-// -------- GLOBALS (needed for scheduler) ----------
+// -------- GLOBALS ----------
 NodeContainer g_nodes;
 Ipv4InterfaceContainer g_interfaces;
 uint16_t g_port = 9000;
 
-
-// -------- TOPOLOGY CHOOSER ----------
+// -------- TOPOLOGY ----------
 std::string ChooseTopology(uint32_t n)
 {
     if (n == 1) return "Single UAV";
@@ -26,7 +26,6 @@ std::string ChooseTopology(uint32_t n)
     else return "Hierarchical Cluster";
 }
 
-
 // -------- RECEIVE CALLBACK ----------
 void ReceivePacket(Ptr<Socket> socket)
 {
@@ -35,46 +34,45 @@ void ReceivePacket(Ptr<Socket> socket)
 
     while ((packet = socket->RecvFrom(from)))
     {
-        uint32_t nodeId = socket->GetNode()->GetId();
-
         std::cout << Simulator::Now().GetSeconds()
-                  << "s  🛰️  UAV-" << nodeId+1
-                  << " RECEIVED a message"
+                  << "s  🛰️ UAV RECEIVED packet of size "
+                  << packet->GetSize()
                   << std::endl;
     }
 }
 
-
-// -------- SEND FUNCTION (scheduler safe) ----------
+// -------- SEND FUNCTION ----------
 void SendUavMessage(uint32_t sender, uint32_t receiver)
 {
     Ptr<Socket> source =
-        Socket::CreateSocket(g_nodes.Get(sender), TcpSocketFactory::GetTypeId());
+        Socket::CreateSocket(g_nodes.Get(sender), UdpSocketFactory::GetTypeId());
 
     InetSocketAddress remote =
         InetSocketAddress(g_interfaces.GetAddress(receiver), g_port);
 
     source->Connect(remote);
 
-    std::string msg = "Hello from UAV " + std::to_string(sender+1);
-    Ptr<Packet> packet = Create<Packet>((uint8_t*)msg.c_str(), msg.length());
+    std::string msg = "Hello from UAV " + std::to_string(sender);
+
+    Ptr<Packet> packet = Create<Packet>((uint8_t*)msg.c_str(), msg.size());
 
     source->Send(packet);
 
     std::cout << Simulator::Now().GetSeconds()
-              << "s  🚁 UAV-" << sender+1
-              << " SENT message to UAV-" << receiver+1 << std::endl;
+              << "s 🚁 UAV-" << sender
+              << " sent to UAV-" << receiver << std::endl;
 }
-
 
 // ================= MAIN =================
 int main(int argc, char *argv[])
 {
-    uint32_t nUav=7;
-    double altitude=100;
-    std::string emergency="yes";
-    std::string terrain="more";
+    // ---- DEFAULT VALUES ----
+    uint32_t nUav = 5;
+    double altitude = 100.0;
+    std::string emergency = "no";
+    std::string terrain = "less";
 
+    // ---- COMMAND LINE ----
     CommandLine cmd;
     cmd.AddValue("nUav", "Number of drones", nUav);
     cmd.AddValue("altitude", "Flying altitude", altitude);
@@ -82,19 +80,17 @@ int main(int argc, char *argv[])
     cmd.AddValue("terrain", "less/more obstacles", terrain);
     cmd.Parse(argc, argv);
 
-    std::string protocol = (emergency == "yes") ? "TCP" : "UDP";
+    std::cout << "\n===== UAV NETWORK SIM =====\n";
+    std::cout << "UAVs: " << nUav << "\n";
+    std::cout << "Altitude: " << altitude << "\n";
+    std::cout << "Topology: " << ChooseTopology(nUav) << "\n";
+    std::cout << "Emergency: " << emergency << "\n";
+    std::cout << "Terrain: " << terrain << "\n";
 
-    std::cout << "\n===== UAV NETWORK NS3 SIM =====\n";
-    std::cout << "UAV Count: " << nUav << std::endl;
-    std::cout << "Altitude: " << altitude << " m\n";
-    std::cout << "Topology: " << ChooseTopology(nUav) << std::endl;
-    std::cout << "Protocol: " << protocol << std::endl;
+    // ---- CREATE NODES ----
+    g_nodes.Create(nUav);
 
-    // -------- CREATE NODES ----------
-    NodeContainer nodes;
-    nodes.Create(nUav);
-
-    // -------- WIFI CHANNEL ----------
+    // ---- WIFI ----
     YansWifiChannelHelper channel;
     channel.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
 
@@ -104,10 +100,8 @@ int main(int argc, char *argv[])
     else
         channel.AddPropagationLoss("ns3::FriisPropagationLossModel");
 
-    Ptr<YansWifiChannel> wifiChannel = channel.Create();
-
     YansWifiPhyHelper phy;
-    phy.SetChannel(wifiChannel);
+    phy.SetChannel(channel.Create());
 
     WifiHelper wifi;
     wifi.SetStandard(WIFI_STANDARD_80211ac);
@@ -115,60 +109,56 @@ int main(int argc, char *argv[])
     WifiMacHelper mac;
     mac.SetType("ns3::AdhocWifiMac");
 
-    NetDeviceContainer devices = wifi.Install(phy, mac, nodes);
+    NetDeviceContainer devices = wifi.Install(phy, mac, g_nodes);
 
-    // -------- MOBILITY ----------
+    // ---- MOBILITY ----
     MobilityHelper mobility;
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(nodes);
+    mobility.Install(g_nodes);
 
     for (uint32_t i = 0; i < nUav; i++)
     {
-        Ptr<MobilityModel> mob = nodes.Get(i)->GetObject<MobilityModel>();
-        mob->SetPosition(Vector(i * 50, 0, altitude));
+        Ptr<MobilityModel> m = g_nodes.Get(i)->GetObject<MobilityModel>();
+        m->SetPosition(Vector(i * 50, 0, altitude));
     }
 
-    // -------- INTERNET ----------
+    // ---- INTERNET ----
     InternetStackHelper internet;
-    internet.Install(nodes);
+    internet.Install(g_nodes);
 
-    Ipv4AddressHelper ip;
-    ip.SetBase("10.1.0.0", "255.255.255.0");
-    Ipv4InterfaceContainer interfaces = ip.Assign(devices);
+    Ipv4AddressHelper ipv4;
+    ipv4.SetBase("10.1.0.0", "255.255.255.0");
 
-    uint16_t port = 9000;
+    g_interfaces = ipv4.Assign(devices);
 
-    // Save globals for scheduler
-    g_nodes = nodes;
-    g_interfaces = interfaces;
-    g_port = port;
+    g_port = 9000;
 
-    // -------- CREATE RECEIVERS ON ALL UAVs ----------
-    for(uint32_t i=0; i<nUav; i++)
+    // ---- RECEIVERS ----
+    for (uint32_t i = 0; i < nUav; i++)
     {
-        Ptr<Socket> recvSink =
-            Socket::CreateSocket(nodes.Get(i), TcpSocketFactory::GetTypeId());
+        Ptr<Socket> sink =
+            Socket::CreateSocket(g_nodes.Get(i), UdpSocketFactory::GetTypeId());
 
-        InetSocketAddress local =
-            InetSocketAddress(Ipv4Address::GetAny(), port);
+        InetSocketAddress local(Ipv4Address::GetAny(), g_port);
 
-        recvSink->Bind(local);
-        recvSink->Listen();
-        recvSink->SetRecvCallback(MakeCallback(&ReceivePacket));
+        sink->Bind(local);
+
+        sink->SetRecvCallback(MakeCallback(&ReceivePacket));
     }
 
-    // -------- SCHEDULE UAV COMMUNICATION ----------
+    // ---- SCHEDULING ----
     double startTime = 2.0;
-    double timeGap = 1.0;
+    double interval = 1.0;
 
-    for(uint32_t i=0; i<nUav-1; i++)
+    for (uint32_t i = 0; i < nUav - 1; i++)
     {
-        Simulator::Schedule(Seconds(startTime + i*timeGap),
-                            &SendUavMessage, i, i+1);
+        Simulator::Schedule(Seconds(startTime + i * interval),
+                            &SendUavMessage, i, i + 1);
     }
 
-    // -------- SIMULATION TIME ----------
     Simulator::Stop(Seconds(10.0));
     Simulator::Run();
     Simulator::Destroy();
+
+    return 0;
 }
