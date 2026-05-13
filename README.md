@@ -22,7 +22,7 @@ This forms a basic UAV communication chain.
 Step 4 — Configure Wireless Channel
 Create a Wi-Fi communication channel.
 If terrain = more obstacles:
-Enable signal fading model (Nakagami).
+Enable signal fading model (Nakagami)(multipath propagation and environmental obstacles, making the UAV communication scenario closer to real-world conditions).
 Enable distance-based signal loss model.
 Otherwise, use default free-space propagation.
 
